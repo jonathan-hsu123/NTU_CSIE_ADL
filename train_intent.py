@@ -80,15 +80,15 @@ def main(args):
         # TODO: Evaluation loop - calculate accuracy and save model weights
         total_loss, total_acc = 0, 0
         for i, (inputs, labels) in enumerate(train_loader):
-            inputs = inputs.to(device, dtype=torch.long) # device 為 "cuda"，將 inputs 轉成 torch.cuda.LongTensor
-            labels = labels.to(device, dtype=torch.long) # device為 "cuda"，將 labels 轉成 torch.cuda.FloatTensor，因為等等要餵進 criterion，所以型態要是 float
+            inputs = inputs.to(device, dtype=torch.long)
+            labels = labels.to(device, dtype=torch.long)
             
-            optimizer.zero_grad() # 由於 loss.backward() 的 gradient 會累加，所以每次餵完一個 batch 後需要歸零
-            outputs = model(inputs) # 將 input 餵給模型
-            loss = criterion(outputs, labels) # 計算此時模型的 training loss
-            loss.backward() # 算 loss 的 gradient
-            optimizer.step() # 更新訓練模型的參數
-            correct = evaluation(outputs, labels) # 計算此時模型的 training accuracy
+            optimizer.zero_grad() 
+            outputs = model(inputs) 
+            loss = criterion(outputs, labels) 
+            loss.backward() 
+            optimizer.step() 
+            correct = evaluation(outputs, labels) 
             total_acc += (correct / batch_size)
             total_loss += loss.item()
             print('[ Epoch{}: {}/{} ] loss:{:.3f} acc:{:.3f} '.format(
@@ -98,17 +98,16 @@ def main(args):
         with torch.no_grad():
             total_loss, total_acc = 0, 0
             for i, (inputs, labels) in enumerate(dev_loader):
-                inputs = inputs.to(device, dtype=torch.long) # device 為 "cuda"，將 inputs 轉成 torch.cuda.LongTensor
-                labels = labels.to(device, dtype=torch.long) # device 為 "cuda"，將 labels 轉成 torch.cuda.FloatTensor，因為等等要餵進 criterion，所以型態要是 float
-                outputs = model(inputs) # 將 input 餵給模型
-                loss = criterion(outputs, labels) # 計算此時模型的 validation loss
-                correct = evaluation(outputs, labels) # 計算此時模型的 validation accuracy
+                inputs = inputs.to(device, dtype=torch.long)
+                labels = labels.to(device, dtype=torch.long)
+                outputs = model(inputs)
+                loss = criterion(outputs, labels) 
+                correct = evaluation(outputs, labels) 
                 total_acc += (correct / batch_size)
                 total_loss += loss.item()
 
             print("Valid | Loss:{:.5f} Acc: {:.3f} ".format(total_loss/v_batch, total_acc/v_batch*100))
             if total_acc > best_acc:
-                # 如果 validation 的結果優於之前所有的結果，就把當下的模型存下來以備之後做預測時使用
                 best_acc = total_acc
                 #torch.save(model, "{}/val_acc_{:.3f}.model".format(model_dir,total_acc/v_batch*100))
                 torch.save(model, "{}/ckpt3.model".format(args.ckpt_dir))
