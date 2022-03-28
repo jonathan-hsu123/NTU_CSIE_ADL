@@ -3,7 +3,8 @@ import pickle
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import Dict
-
+import tensorflow as tf
+import datetime
 import torch
 import torch.nn as nn
 from tqdm import trange
@@ -11,12 +12,18 @@ from tqdm import trange
 from dataset import SeqClsDataset
 from utils import Vocab
 from model import SeqClassifier
+from torch.utils.tensorboard import SummaryWriter
 
 TRAIN = "train"
 DEV = "eval"
 SPLITS = [TRAIN, DEV]
 
 torch.manual_seed(878)
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+train_log_dir = 'logs/intent/' + 'cnn-lstm' + '/train'
+dev_log_dir = 'logs/intent/' + 'cnn-lstm' + '/test'
+train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+dev_summary_writer = tf.summary.create_file_writer(dev_log_dir)
 
 def evaluation(outputs, labels):
     predict = torch.argmax(outputs , dim = 1)
@@ -74,6 +81,7 @@ def main(args):
     total_loss, total_acc, best_acc = 0, 0, 0
     batch_size = args.batch_size
 
+
     epoch_pbar = trange(args.num_epoch, desc="Epoch")
     for epoch in epoch_pbar:
         # TODO: Training loop - iterate over train dataloader and update model weights
@@ -94,6 +102,9 @@ def main(args):
             print('[ Epoch{}: {}/{} ] loss:{:.3f} acc:{:.3f} '.format(
             	epoch+1, i+1, t_batch, loss.item(), correct/batch_size*100), end='\r')
         print('\nTrain | Loss:{:.5f} Acc: {:.3f}'.format(total_loss/t_batch, total_acc/t_batch*100))
+        with train_summary_writer.as_default():
+            tf.summary.scalar('loss', total_loss / t_batch, step=epoch)
+            tf.summary.scalar('accuracy', total_acc / t_batch, step=epoch)
         model.eval()
         with torch.no_grad():
             total_loss, total_acc = 0, 0
@@ -109,9 +120,15 @@ def main(args):
             print("Valid | Loss:{:.5f} Acc: {:.3f} ".format(total_loss/v_batch, total_acc/v_batch*100))
             if total_acc > best_acc:
                 best_acc = total_acc
-                #torch.save(model, "{}/val_acc_{:.3f}.model".format(model_dir,total_acc/v_batch*100))
-                torch.save(model, "{}/ckpt3.model".format(args.ckpt_dir))
+                torch.save(model, "{}/val_acc_{:.3f}.model".format(args.ckpt_dir,total_acc/v_batch*100))
+                # torch.save(model, "{}/ckpt3.model".format(args.ckpt_dir))
                 print('saving model with acc {:.3f}'.format(total_acc/v_batch*100))
+            with dev_summary_writer.as_default():
+                tf.summary.scalar('loss', total_loss / v_batch, step=epoch)
+                tf.summary.scalar('accuracy', total_acc / v_batch, step=epoch)
+        
+
+        
         model.train()
 
     # TODO: Inference on test set
@@ -144,11 +161,11 @@ def parse_args() -> Namespace:
     # model
     parser.add_argument("--hidden_size", type=int, default=512)
     parser.add_argument("--num_layers", type=int, default=2)
-    parser.add_argument("--dropout", type=float, default=0.5)
+    parser.add_argument("--dropout", type=float, default=0.2)
     parser.add_argument("--bidirectional", type=bool, default=True)
 
     # optimizer
-    parser.add_argument("--lr", type=float, default=5e-4)
+    parser.add_argument("--lr", type=float, default=1e-3)
 
     # data loader
     parser.add_argument("--batch_size", type=int, default=32)
@@ -157,7 +174,7 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cpu"
     )
-    parser.add_argument("--num_epoch", type=int, default=200)
+    parser.add_argument("--num_epoch", type=int, default=100)
 
     args = parser.parse_args()
     return args
