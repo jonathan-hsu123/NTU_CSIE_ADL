@@ -6,3 +6,5 @@ HW1/__pycache__/
 HW1/b08902022/
 HW1/glove*
 HW2/ntu*
+HW2/*.csv
+HW2/*.json
