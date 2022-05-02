@@ -175,9 +175,9 @@ def parse_args() -> Namespace:
     parser.add_argument("--max_len", type=int, default=512)
 
     # bert model
-    parser.add_argument("--model_type", type=str, default="hfl/chinese-macbert-large")
-    parser.add_argument("--context_model", type=Path, default="/tmp2/jonathanhsu/ADL/context_selection")
-    parser.add_argument("--QA_model", type=Path, default="/tmp2/jonathanhsu/ADL/QA")
+    parser.add_argument("--model_type", type=str, default="bert-base-chinese")
+    parser.add_argument("--context_model", type=Path, default="/tmp2/jonathanhsu/ADL/no_pretrain/context/model_dir/checkpoint-338")
+    parser.add_argument("--QA_model", type=Path, default="/tmp2/jonathanhsu/ADL/bert_base/QA/model_dir/checkpoint-430")
     
     parser.add_argument(
         "--output_dir",
@@ -189,7 +189,7 @@ def parse_args() -> Namespace:
         "--pred_file",
         type=Path,
         help="File path to the prediction file",
-        default="./pred.csv"
+        default="./pred2.csv"
     )
     args = parser.parse_args()
     return args 

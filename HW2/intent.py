@@ -1,5 +1,5 @@
 from transformers import (
-    AutoModelForMultipleChoice,
+    AutoModelForSequenceClassification,
     AutoTokenizer,
     AutoConfig,
     Trainer,
@@ -10,18 +10,17 @@ from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import Dict, List
 from datasets import Dataset
-
+import numpy as np
 
 def compute_metrics(pred):
-    labels = pred.label_ids
-    preds = pred.predictions.argmax(-1)
+    logits, labels = pred 
+    prediction = np.argmax(logits, axis=-1)
+    correct_num = 0
 
-    correct_numbers = 0
-    for pred, label in zip(preds, labels):
-        if pred == label:
-            correct_numbers += 1
-
-    return {'accuracy': correct_numbers / len(labels)}
+    for p, l in zip(prediction, labels):
+        if p == l:
+            correct_num += 1
+    return {'accuracy': correct_num / len(prediction)}
 
 def open_json(path):
     with open(path, 'r', encoding='utf-8') as fp:
@@ -29,9 +28,6 @@ def open_json(path):
 
 def json_to_dict(json_file, context):
     return_dict = {key: [] for key in json_file[0].keys()}
-    if 'relevant' in return_dict:
-        return_dict.pop('relevant', None)
-        return_dict.update({'labels': []})
     max_para_size = 0
     for data in json_file:
         if len(data['paragraphs']) > max_para_size:
@@ -52,31 +48,33 @@ def json_to_dict(json_file, context):
     return return_dict
 
 def main(args):
+    intent2idx: Dict[str, int] = json.loads(args.intent_to_idx_data_path.read_text())
+    idx2intent = {idx: intent for intent, idx in intent2idx.items()}
+
     train_json = open_json(args.train_data_path)
     valid_json = open_json(args.valid_data_path)
-    context = open_json(args.context_path)
+    test_json = open_json(args.test_data_path)
 
-    train_dict = json_to_dict(train_json, context)
-    valid_dict = json_to_dict(valid_json, context)
-
-    train_dataset = Dataset.from_dict(train_dict)
-    valid_dataset = Dataset.from_dict(valid_dict)
     tokenizer = AutoTokenizer.from_pretrained(args.model_type)
 
-    def map_data(input_data: Dict[str, List]) -> Dict[str, List]:
+    def map_data(input_data) -> Dict[str, List]:
         return_data = {}
-        for i, paragraphs in enumerate(input_data['paragraphs']):
-            question = input_data['question'][i]
-            tokens = tokenizer([[question, paragraph] for paragraph in paragraphs], padding='max_length', max_length=args.max_len, truncation='only_second', return_tensors='pt')
+        for i, instance in enumerate(input_data):
+            text = instance['text']
+            tokens = tokenizer(text, padding='max_length', max_length=args.max_len)
             if i == 0:
                 return_data.update({key: [] for key in tokens.keys()})
-            for key, item in tokens.items():
-                return_data[key].append(item)
+                if 'intent' in instance:
+                    return_data.update({'labels': []})
+            for key, values in tokens.items():
+                return_data[key].append(values)
+            if 'intent' in instance:
+                return_data['labels'].append(intent2idx[instance['intent']])
         return return_data
 
-    train_dataset = train_dataset.map(map_data, batched=True, num_proc=10, remove_columns=['question', 'paragraphs', 'answer', 'id'])
-    valid_dataset = valid_dataset.map(map_data, batched=True, num_proc=10, remove_columns=['question', 'paragraphs', 'answer', 'id'])
-    # print(train_dataset)
+    train_dataset = Dataset.from_dict(map_data(train_json))
+    valid_dataset = Dataset.from_dict(map_data(valid_json))
+    test_dataset = Dataset.from_dict(map_data(test_json))
 
     seed = 7789
 
@@ -99,7 +97,7 @@ def main(args):
         gradient_checkpointing=True,
     )
     config = AutoConfig.from_pretrained(args.model_type)
-    model = AutoModelForMultipleChoice.from_pretrained(args.model_type)
+    model = AutoModelForSequenceClassification.from_pretrained(args.model_type, num_labels=150)
 
     trainer = Trainer(
         model=model,
@@ -112,40 +110,79 @@ def main(args):
     trainer.train()
     trainer.evaluate()
 
+    training_args = TrainingArguments(
+        output_dir='tmp2',
+        do_train=False,
+        seed=seed,
+    )
+
+    trainer = Trainer(
+        model=model,
+        args=training_args
+    )
+
+    logits = trainer.predict(test_dataset)
+
+    predictions = np.argmax(logits[0], axis=-1)
+    pred_intents = []
+
+    for i, instance in enumerate(test_json):
+        test_id = instance['id']
+        pred_intents.append((test_id, idx2intent[predictions[i]]))
+    
+    with open(args.pred_file, 'w+') as f:
+        f.write('id,intent\n')
+        for i, e in pred_intents:
+            f.write(f'{i},{e}\n')
+
 
 
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
     parser.add_argument(
-        "--context_path",
-        type=Path,
-        help="Path to the context file.",
-        default="./context.json",
-    )
-    parser.add_argument(
         "--train_data_path",
         type=Path,
         help="Path to the data(input question).",
-        default="./train.json",
+        default="/tmp2/jonathan/data/intent/train.json",
     )
     parser.add_argument(
         "--valid_data_path",
         type=Path,
         help="Path to the data(input question).",
-        default="./valid.json",
+        default="/tmp2/jonathan/data/intent/eval.json",
     )
+    parser.add_argument(
+        "--test_data_path",
+        type=Path,
+        help="Path to the data(input question).",
+        default="/tmp2/jonathan/data/intent/test.json",
+    )
+    parser.add_argument(
+        "--intent_to_idx_data_path",
+        type=Path,
+        help="Path to the data(input question).",
+        default="/tmp2/jonathan/cache/intent/intent2idx.json",
+    )
+    
     # data
     parser.add_argument("--max_len", type=int, default=512)
     # optimizer
     parser.add_argument("--lr", type=float, default=5e-5)
     # data loader
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--num_epoch", type=int, default=2)
+    parser.add_argument("--num_epoch", type=int, default=5)
     # bert model
-    parser.add_argument("--model_type", type=str, default="bert-base-chinese")
-    parser.add_argument("--model_dir", type=Path, default="/tmp2/jonathanhsu/ADL/no_pretrain/context/model_dir")
-    parser.add_argument("--log_dir", type=Path, default="/tmp2/jonathanhsu/ADL/no_pretrain/context/log_dir")
+    parser.add_argument("--model_type", type=str, default="bert-base-cased")
+    parser.add_argument("--model_dir", type=Path, default="/tmp2/jonathanhsu/ADL/bert_base/intent/model_dir")
+    parser.add_argument("--log_dir", type=Path, default="/tmp2/jonathanhsu/ADL/bert_base/intent/log_dir")
+
+    parser.add_argument(
+        "--pred_file",
+        type=Path,
+        help="File path to the prediction file",
+        default="./pred_intent.csv"
+    )
     
     args = parser.parse_args()
     return args 

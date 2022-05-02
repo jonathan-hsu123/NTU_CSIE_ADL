@@ -145,9 +145,9 @@ def parse_args() -> Namespace:
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--num_epoch", type=int, default=2)
     # bert model
-    parser.add_argument("--model_type", type=str, default="hfl/chinese-macbert-large")
-    parser.add_argument("--model_dir", type=Path, default="/tmp2/jonathanhsu/ADL/model_dir")
-    parser.add_argument("--log_dir", type=Path, default="/tmp2/jonathanhsu/ADL/log_dir")
+    parser.add_argument("--model_type", type=str, default="bert-base-chinese")
+    parser.add_argument("--model_dir", type=Path, default="/tmp2/jonathanhsu/ADL/no_pretrain/QA/model_dir")
+    parser.add_argument("--log_dir", type=Path, default="/tmp2/jonathanhsu/ADL/no_pretrain/QA/log_dir")
     
     args = parser.parse_args()
     return args 
